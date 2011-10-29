@@ -1,1 +1,5 @@
 *~
+orc2zip
+zip2orc
+*.orc
+*.zip
