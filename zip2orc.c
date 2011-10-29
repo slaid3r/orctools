@@ -1,18 +1,20 @@
 #include <stdio.h>
-#include <windows.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <io.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
 #include <direct.h>
-#define PATHSLASH   '\\'
-#define make_dir(A) mkdir(A);
-
-#define __int8 char
-typedef unsigned char _BYTE;
-typedef unsigned short _WORD;
-typedef unsigned int _DWORD;
+#else
+#include <unistd.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#endif
+#include <glib.h>
+#include <gio/gio.h>
 
 char *Seed="\x20\0\0\0WgQgJ3vyYvAAkHHhFdueKh2ssZli8Ko4";       // beta
 char *SeedPtr=0;
@@ -96,21 +98,21 @@ static const unsigned int   dword_1AFDA80[256] = {
     0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
 };
 
-int CryptCRC_(int *Keys, char param3)
+gintptr CryptCRC_(int *Keys, char param3)
 {
   int result; // eax@1
   int *v4; // ST00_4@1
 
   v4 = Keys;
-  *Keys = dword_1AFDA80[(unsigned __int8)(*Keys ^ param3)] ^ ((unsigned int)*Keys >> 8);
+  *Keys = dword_1AFDA80[(guint8)(*Keys ^ param3)] ^ ((unsigned int)*Keys >> 8);
   v4[1] += *v4 & 0xFF;
   v4[1] = 290333451 * v4[1] + 1;
-  result = (int)Keys;
-  Keys[2] = dword_1AFDA80[(unsigned __int8)(Keys[2] ^ ((unsigned int)Keys[1] >> 24))] ^ ((unsigned int)Keys[2] >> 8);
+  result = (gintptr)Keys;
+  Keys[2] = dword_1AFDA80[(guint8)(Keys[2] ^ ((unsigned int)Keys[1] >> 24))] ^ ((unsigned int)Keys[2] >> 8);
   return result;
 }
 
-int InitCrypt(int *Keys, int **Par2, int FileSize)
+gintptr InitCrypt(int *Keys, int **Par2, int FileSize)
 {
   int result; // eax@5
   int j; // [sp+8h] [bp-38h]@11
@@ -133,8 +135,8 @@ int InitCrypt(int *Keys, int **Par2, int FileSize)
       Keys[1] = FileSize;
       Keys[2] = 878082192;
       for ( i = 0; i < v9; ++i )
-        CryptCRC_(Keys, *((_BYTE *)v8 + i));
-      result = (int)Keys;
+        CryptCRC_(Keys, *((guint8 *)v8 + i));
+      result = (gintptr)Keys;
     }
     else
     {
@@ -144,8 +146,8 @@ int InitCrypt(int *Keys, int **Par2, int FileSize)
       Keys[1] = 591751049;
       Keys[2] = FileSize;
       for ( j = 0; j < v6; ++j )
-        CryptCRC_(Keys, *((_BYTE *)v5 + j));
-      result = (int)Keys;
+        CryptCRC_(Keys, *((guint8 *)v5 + j));
+      result = (gintptr)Keys;
     }
   }
   else
@@ -156,8 +158,8 @@ int InitCrypt(int *Keys, int **Par2, int FileSize)
     Keys[1] = 591751049;
     Keys[2] = 878082192;
     for ( k = 0; k < v12; ++k )
-      CryptCRC_(Keys, *((_BYTE *)v11 + k));
-    result = (int)Keys;
+      CryptCRC_(Keys, *((guint8 *)v11 + k));
+    result = (gintptr)Keys;
   }
   return result;
 }
@@ -174,10 +176,10 @@ int DeCrypt(int *Keys, char *pBuffer, int Count)
   v7 = 0;
   while ( v7 < Count )
   {
-    v4 = (unsigned __int8)((unsigned __int16)((*((_WORD *)v6 + 4) | 2) * ((*((_WORD *)v6 + 4) | 2) ^ 1)) >> 8);
-    v5 = v4 ^ *(_BYTE *)pBuffer;
-    CryptCRC_(v6, *(_BYTE *)pBuffer);
-    *(_BYTE *)pBuffer = v5;
+    v4 = (guint8)((guint16)((*((guint16 *)v6 + 4) | 2) * ((*((guint16 *)v6 + 4) | 2) ^ 1)) >> 8);
+    v5 = v4 ^ *(guint8 *)pBuffer;
+    CryptCRC_(v6, *(guint8 *)pBuffer);
+    *(guint8 *)pBuffer = v5;
     result = v7++ + 1;
     pBuffer = (char *)((char *)pBuffer + 1);
   }
@@ -193,17 +195,17 @@ int CalcNameHash(char *Name)
   int v6; // [sp+14h] [bp-4h]@1
 
   v6 = 0;
-  for ( i = 0; i < *((_DWORD *)Name + 1); ++i )
+  for ( i = 0; i < *((guintptr *)Name + 1); ++i )
   {
-    if ( *(_BYTE *)(*(_DWORD *)Name + i) == 92 )
+    if ( *(guint8 *)(*(guintptr *)Name + i) == 92 )
     {
       v3 = 47;
     }
     else
     {
-      v4 = *(_BYTE *)(*(_DWORD *)Name + i);
+      v4 = *(guint8 *)(*(guintptr *)Name + i);
       if ( v4 < 'A' || v4 > 'Z' )
-        v2 = *(_BYTE *)(*(_DWORD *)Name + i);
+        v2 = *(guint8 *)(*(guintptr *)Name + i);
       else
         v2 = v4 + ' ';
       v3 = v2;
@@ -237,59 +239,64 @@ int DecryptWord()
     return Tmp&65535;
 }
 
-char *create_dir(char *name) {
-    char      *p,
-            *l;
-
-    for(p = name; (*p == '\\') || (*p == '/') || (*p == '.'); p++);
-    name = p;
-
-    for(;;) {
-        if((p[0] && (p[1] == ':')) || ((p[0] == '.') && (p[1] == '.'))) p[0] = '_';
-
-        l = strchr(p, '\\');
-        if(!l) {
-            l = strchr(p, '/');
-            if(!l) break;
-        }
-        *l = 0;
-        p = l + 1;
-        make_dir(name);
-        *l = PATHSLASH;
-    }
-    return(name);
-}
-
 int main(int argc, char*argv[])
 {
     int Tmp,i, FNLen,FileSize,FileExpSize,FileOffs,Bad,CompressMethod,Extra,Comment;
     char Buff[4097];
     char *zfile,*file;
     void *OldReadPtr;
+    GFile *src;
+    GFile *dest;
+    GFileInfo *info;
+#ifdef _WIN32
     HANDLE HF,HM;
-    FILE *nul=fopen("nul","w");
+#else
+    int HF;
+#endif
+
+#ifdef _WIN32
+	FILE *nul=fopen("nul","w");
+#else
+	FILE *nul=fopen("/dev/null","w");
+#endif
+    
+    g_type_init();
 
     strcpy(Buff,argv[1]);
     strcat(Buff,".orc");
     printf("Copying '%s' to '%s'\n",argv[1],Buff);
-    CopyFile(argv[1],Buff,FALSE);
 
+	src = g_file_new_for_path(argv[1]);
+	dest = g_file_new_for_path(Buff);
+	g_file_copy(src, dest, G_FILE_COPY_OVERWRITE, NULL, NULL, NULL, NULL);
+	
+	info = g_file_query_info(dest, G_FILE_ATTRIBUTE_STANDARD_SIZE, G_FILE_QUERY_INFO_NONE, NULL, NULL);
+	FileSize = (int) g_file_info_get_attribute_uint64(info, G_FILE_ATTRIBUTE_STANDARD_SIZE);
+	g_object_unref(info);
+	
+	g_object_unref(src);
+	g_object_unref(dest);
+
+#ifdef _WIN32
     HF=CreateFile(Buff,GENERIC_READ|GENERIC_WRITE,
         FILE_SHARE_WRITE|FILE_SHARE_READ,0,OPEN_EXISTING,0,0);
 
     HM=CreateFileMapping(HF,0,PAGE_READWRITE,0,0,0);
 
     Base=MapViewOfFile(HM,FILE_MAP_WRITE,0,0,0);
+#else
+    HF = g_open(Buff, O_RDWR, 0);
+	Base = mmap(NULL, FileSize, PROT_READ|PROT_WRITE, MAP_SHARED, HF, 0);
+	close(HF);
+#endif
 
     SeedPtr=Seed+4;
 
-    if(!HF || !HM || !Base)
+    if(!Base)
     {
         fprintf(nul,"Error\n");
         return;
     }
-
-    FileSize=GetFileSize(HF,0);
 
     ReadPtr=((char*)Base)+FileSize-0x16;
     
@@ -411,5 +418,12 @@ do_dump:
 		goto Loop;
 Exit:
 	puts("\nDone!");
+
+#ifdef _WIN32
+	UnmapViewOfFile(Base);
+	CloseHandle(HF);
+#else
+	munmap(Base, FileSize);
+#endif
 }
 
